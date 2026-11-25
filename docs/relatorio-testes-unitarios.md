@@ -75,3 +75,97 @@ Handlers MSW usam o formato `{ success, count, data }` em GET, `{ success, data 
 | API04/RN03 | Nome equivalente após normalização responde 409 e não cria nova categoria | Controller não normaliza o nome antes da inserção; valores distintos como `" trabalho "` e `"Trabalho"` não colidem pela unicidade literal | B5, marcado `it.fails`; execução real depende de corrigir acesso ao PostgreSQL |
 
 **Resumo:** frontend: 3 testes, 2 aprovados e 1 falha esperada (`it.fails`). Backend: 8 testes definidos (2 `it.fails` para divergências esperadas), mas a suíte não chegou a executar por falha de autenticação PostgreSQL. `src/` permaneceu intacto. Cobertura não aplicável a esta atividade.
+
+## Testes E2E
+
+### 1. Casos por jornada
+
+#### J03 — Edição de usuário
+
+| # | Preparação (API) | Passos do usuário | Resultado visível | Após recarregar |
+|---|---|---|---|---|
+| J03.1 | Criar usuário com nome e email únicos | Abrir Usuários, clicar em Editar na linha do email, alterar Nome e clicar em Atualizar | Novo nome aparece e o nome anterior não aparece na linha | Novo nome aparece e o nome anterior continua ausente |
+
+#### J04 — Exclusão de usuário
+
+| # | Preparação (API) | Passos do usuário | Resultado visível | Após recarregar |
+|---|---|---|---|---|
+| J04.1 | Criar usuário com nome e email únicos | Clicar em Excluir na linha e aceitar `window.confirm` | Usuário deixa de aparecer na lista | Usuário continua ausente |
+| J04.2 | Criar usuário com nome e email únicos | Clicar em Excluir na linha e cancelar `window.confirm` | Usuário permanece na lista | Usuário continua visível |
+
+#### J05 — Cadastro, edição e exclusão de categoria
+
+| # | Preparação (API) | Passos do usuário | Resultado visível | Após recarregar |
+|---|---|---|---|---|
+| J05.1 | Nenhuma; nome e descrição únicos | Adicionar Categoria, preencher Nome e Descrição e clicar em Criar | Categoria criada aparece com nome e descrição | Categoria aparece com os mesmos dados |
+| J05.2 | Criar categoria com nome e descrição únicos | Editar sua linha, alterar Nome e Descrição e clicar em Atualizar | Dados atualizados aparecem e o nome anterior não aparece | Dados atualizados persistem e o nome anterior continua ausente |
+| J05.3 | Criar categoria sem tarefas | Clicar em Excluir e confirmar | Categoria deixa de aparecer | Categoria continua ausente |
+| J05.4 | Criar categoria sem tarefas | Clicar em Excluir e cancelar | Categoria permanece visível | Categoria continua visível |
+| J05.5 | Nenhuma; nome único | Abrir formulário, deixar Nome vazio e preencher descrição; tentar Criar | Validação impede o envio e categoria não aparece | Categoria não aparece |
+
+#### J06 — Categoria em uso
+
+| # | Preparação (API) | Passos do usuário | Resultado visível | Após recarregar |
+|---|---|---|---|---|
+| J06.1 | Criar usuário, categoria e tarefa associada | Clicar em Excluir na linha da categoria e confirmar | Mensagem de erro é exibida e categoria permanece na lista | Categoria permanece visível |
+
+#### J07 — Email já cadastrado
+
+| # | Preparação (API) | Passos do usuário | Resultado visível | Após recarregar |
+|---|---|---|---|---|
+| J07.1 | Criar usuário com email único | Tentar cadastrar outro usuário usando o mesmo email | Mensagem “Email já cadastrado” é exibida e formulário permanece aberto | Usuário original continua visível |
+
+#### J08 — Tarefa concluída
+
+| # | Preparação (API) | Passos do usuário | Resultado visível | Após recarregar |
+|---|---|---|---|---|
+| J08.1 | Criar usuário, categoria e tarefa com status COMPLETED | Editar a tarefa, selecionar Pendente e clicar em Atualizar | Alteração recusada; status permanece COMPLETED | Status continua COMPLETED |
+
+### 2. Mapeamento teste → caso
+
+| Arquivo / teste | Caso |
+|---|---|
+| `UsersEdit.e2e.spec.ts` — edita usuário e persiste o novo nome | J03.1 |
+| `UsersDelete.e2e.spec.ts` — confirma exclusão | J04.1 |
+| `UsersDelete.e2e.spec.ts` — cancela exclusão | J04.2 |
+| `Categories.e2e.spec.ts` — cria categoria | J05.1 |
+| `Categories.e2e.spec.ts` — edita categoria | J05.2 |
+| `Categories.e2e.spec.ts` — confirma exclusão | J05.3 |
+| `Categories.e2e.spec.ts` — cancela exclusão | J05.4 |
+| `Categories.e2e.spec.ts` — impede envio sem Nome | J05.5 |
+| `CategoriesInUse.e2e.spec.ts` — bloqueia exclusão de categoria em uso | J06.1 |
+| `UsersDuplicateEmail.e2e.spec.ts` — exibe conflito de email duplicado | J07.1 |
+| `TasksCompleted.e2e.spec.ts` — bloqueia COMPLETED → PENDING | J08.1 |
+
+### 3. Revisão dos testes
+
+- Revisão dos sinais solicitados: nenhum `waitForTimeout`, seletor CSS, `{ force: true}`, aumento de timeout/retries, dependência de seed/ordem/contagem ou usuário criado pela interface sem limpeza.
+- Todos os dados de cada caso são preparados por `dados` ou têm a criação pela interface registrada para limpeza; nomes e emails usam `unico()`/`emailUnico()`.
+- Os diálogos são aceitos/cancelados com `page.once('dialog', ...)` antes do clique. Os casos persistentes recarregam a página e verificam o resultado no banco.
+- Ajuste de localizadores: as telas de Categorias e Tarefas não expõem os campos associados aos rótulos usados por `getByLabel`; para preservar a interação por papel acessível, os testes usam os campos `textbox`/`combobox` da tela. Nenhuma asserção ou regra esperada foi afrouxada.
+- J06 verifica a categoria após recarregar; a mensagem de erro é transitória e, por isso, só é esperada imediatamente após a tentativa de exclusão.
+- J07 e J08 estão marcados com `test.fail()` e comentário curto porque a execução confirmou divergências com RF09 e RN01/API05.
+
+### 4. Estabilidade (`--repeat-each=5`)
+
+`npx playwright test --repeat-each=5`: 75 resultados classificados como aprovados pelo Playwright (15 casos × 5 repetições), código de saída 0. Os casos J07 e J08 foram falhas esperadas (`test.fail()`) nas cinco repetições; os demais passaram nas cinco execuções. Não houve falha intermitente.
+
+### 5. Sabotagens controladas
+
+Não executadas: as sabotagens solicitam alterações temporárias em arquivos `src/`, proibidas pela regra 1 do `AGENTS.md` (“Não altere nenhum arquivo dentro de `src/`”). Nenhum arquivo de produção foi alterado.
+
+| Sabotagem solicitada | Teste esperado | Detectada? | Resultado |
+|---|---|---|---|
+| Remover `fetchUsers()` após salvar (`Users.tsx`) | J02/J03 | Não avaliada | Não executada por conflito com AGENTS.md |
+| Trocar texto do link Categorias (`App.tsx`) | J01 | Não avaliada | Não executada por conflito com AGENTS.md |
+| Ignorar `window.confirm` na exclusão | J04.2 | Não avaliada | Não executada por conflito com AGENTS.md |
+| Remover checagem `canDeleteCategory` (backend) | J06.1 | Não avaliada | Não executada por conflito com AGENTS.md |
+
+### 6. Defeitos encontrados
+
+| Jornada / teste | Comportamento esperado | Comportamento observado | Registro |
+|---|---|---|---|
+| J07 / `UsersDuplicateEmail.e2e.spec.ts` (J07.1) | Ao receber email duplicado, mostrar “Email já cadastrado”, manter o formulário aberto e preservar o usuário existente após recarregar | A tela não mostra a mensagem específica exigida pela RF09 (o tratamento apresenta erro genérico); o usuário original permanece após recarregar | `test.fail()`; reproduzido nas cinco repetições |
+| J08 / `TasksCompleted.e2e.spec.ts` (J08.1) | Recusar COMPLETED → PENDING e exibir COMPLETED após recarregar | A atualização é aceita e o status não permanece COMPLETED | `test.fail()`; reproduzido nas cinco repetições |
+
+Execução final de `npm run test:e2e`: código de saída 0; 15 casos classificados como aprovados, incluindo J07 e J08 como falhas esperadas. Os testes novos não revelaram divergência adicional em J03–J06.
